@@ -1,0 +1,56 @@
+Le Level 7 alloue deux structures sur le tas via malloc. Chaque structure contient un buffer. Le programme utilise strcpy pour copier vos deux arguments (argv[1] et argv[2]) dans ces buffers.
+
+Le premier strcpy pour déborder et écraser un pointeur situé dans la deuxième structure. Ce pointeur deviendra notre "Cible d'écriture".
+
+Le deuxième strcpy pour écrire l'adresse de la fonction gagnante (m) à l'endroit pointé par notre cible corrompue.
+
+LE CALCUL DE L'OFFSET (LE "DÉLIRE" DES MALLOCS)
+Pourquoi 20 octets ? Pour le comprendre, il faut regarder comment malloc organise la mémoire (le "Tas").
+
+Quand tu appelles malloc(8), le système n'alloue pas juste 8 octets. Il crée un Chunk qui contient:
+
+Le Header (8 octets): Contient des métadonnées (taille du bloc précédent, taille du bloc actuel, flags).
+
+Les Données (8 octets): L'espace que tu as demandé.
+
+Dans le Level 7, les deux buffers sont très proches. Voici la disposition en mémoire 32-bits:
+
+Buffer 1: 8 octets de données.
+
+Alignement/Margin: Le système arrondit souvent les allocations.
+
+Header du Buffer 2: 8 octets.
+
+Le calcul mathématique:
+Pour atteindre le pointeur du deuxième buffer depuis le début du premier:
+8 (Données Buffer 1) + 4 (Padding/Alignement) + 8 (Header du Buffer 2) = 20 octets.
+
+C'est pour cela qu'on écrit "A"*20. Les 20 premiers caractères remplissent le vide, et les 4 suivants (l'adresse) viennent s'écraser pile sur le pointeur du deuxième strcpy.
+
+Pour gagner, on ne veut pas seulement écraser une variable, on veut détourner une fonction système. Pour cela, on vise la GOT (Global Offset Table).
+
+objdump -R ./level7 | grep puts
+objdump -R: Affiche les "Relocations". C'est la liste des adresses où le programme stocke les emplacements réels des fonctions de la bibliothèque C (comme puts, printf, exit).
+
+| grep puts: On cible puts parce que c'est la dernière fonction appelée par le programme (pour afficher ~~).
+
+Si la commande renvoie:
+08049928 R_386_JUMP_SLOT   puts
+Cela signifie que l'adresse 0x08049928 est l'endroit exact dans la mémoire où le programme va chercher l'adresse de puts pour l'exécuter. Si on remplace le contenu de cette adresse par celui de notre fonction m, le programme lancera m au lieu de puts.
+
+./level7 $(python -c 'print "A"*20 + "\x28\x99\x04\x08"') $(python -c 'print "\xf4\x84\x04\x08"')
+Argument 1: Le "WHERE" (Où on écrit)
+"A"*20: On traverse le premier buffer et les métadonnées du second (le "Header").
+
+\x28\x99\x04\x08: C'est l'adresse de puts dans la GOT (trouvée avec objdump).
+
+Effet: Le pointeur du deuxième buffer pointe maintenant sur la table des fonctions système.
+
+\xf4\x84\x04\x08: C'est l'adresse de la fonction m (trouvée avec info functions dans GDB).
+
+Effet: Le deuxième strcpy s'exécute. Il écrit cette adresse à l'emplacement de puts@GOT.
+
+Le programme termine ses copies, puis arrive à la ligne:
+puts("~~");
+
+Au lieu d'afficher ~~, le processeur va dans la GOT, lit l'adresse que vous avez injectée (0x080484f4), et saute directement dans la fonction m(). La fonction m s'exécute alors, lit le fichier .pass et vous affiche le mot de passe suivi d'un timestamp.

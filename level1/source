@@ -1,0 +1,13 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+void run() {
+	fwrite("Good... filename\n", 1, 19, stdout);
+	system("/bin/sh");
+}
+
+int main() {
+	char buffer[64]; // Défini par le lea eax, [ebp-0x40]
+	gets(buffer);    // La faille critique
+	return 0;
+}

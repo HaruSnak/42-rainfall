@@ -1,0 +1,36 @@
+L'objectif du Level 8 est de contourner une vérification d'authentification dans un programme interactif gérant des sessions utilisateur. Le binaire 
+propose les commandes `auth`, `reset`, `service` et `login`. Mon but a été de forcer la commande `login` à m'accorder un shell root en manipulant 
+l'état interne de la mémoire dynamique (le Tas).
+
+
+Au lieu de passer immédiatement par une analyse statique lourde sous GDB, j'ai privilégié une approche expérimentale. Cette méthode m'a permis de 
+comprendre le comportement du binaire en temps réel.
+
+Observation via ltrace: J'ai d'abord identifié que le programme utilise `malloc` pour la commande `auth` et `strdup` (allocation dynamique) 
+pour la commande `service`.
+	Analyse des adresses: Le programme étant "bavard", il affiche l'adresse des pointeurs après chaque commande. J'ai noté que:
+		L'adresse de `auth` est fixée lors du premier appel (ex: `0x804a008`).
+		Les adresses de `service` s'incrémentent à chaque nouvel appel, montant progressivement dans le tas.
+
+La faille ne réside pas dans un crash, mais dans une condition de succès mal protégée. Le code source (reconstitué) montre que le succès du login dépend de cette vérification:
+
+if (auth[32] != 0) { system("/bin/sh"); }
+
+Le programme vérifie si l'octet situé 32 octets après le début du bloc alloué pour `auth` contient une valeur. Puisque `auth` n'a été alloué que pour un petit espace, cet index de 32 octets tombe en réalité dans les zones mémoires allouées ultérieurement.
+
+J'ai procédé par étapes pour "inonder" le tas et atteindre la zone mémoire surveillée par le pointeur `auth`.
+
+| Commande saisie   | Adresse Auth | Adresse Service 		| Impact sur la mémoire |
+| `auth test` 	    | `0x804a008`  | `(nil)` 				| Initialisation de la base |
+| `service "A"*20`  | `0x804a008`  | `0x804a018` 			| Rapprochement de la zone cible |
+| `service "A"*64`  | `0x804a008`  | `0x804a040` 			| Écrasement de la zone `auth[32]` |
+
+En envoyant des chaînes de caractères de plus en plus longues via la commande `service`, j'ai pratiqué un arrosage du tas (Heap Spraying). Même si `service` alloue de nouveaux blocs, les données injectées précédemment restent présentes en mémoire.
+Une fois que j'ai eu la certitude que la zone mémoire située à `auth + 32` (soit `0x804a028`) était polluée par mes "A" (`0x41`), j'ai lancé la commande `login`. La condition `!= 0` est devenue vraie, et le shell s'est ouvert.
+
+Cette exploitation démontre deux principes fondamentaux de la gestion de mémoire:
+
+*   Persistence des données: `malloc` ne nettoie pas la mémoire. Les résidus des commandes précédentes peuvent influencer les vérifications futures.
+*   Défaut de conception: L'utilisation d'un index fixe (32) sur un pointeur dont la taille allouée est inférieure est une erreur critique de programmation.
+
+En observant simplement les adresses mémoire fournies par le binaire et en testant les limites des buffers, j'ai pu identifier la structure du tas et manipuler la logique du programme sans avoir besoin d'un exploit binaire complexe.

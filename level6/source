@@ -1,0 +1,23 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void n(void) {
+    printf("Nope\n");
+}
+
+void m(void) {
+	system("/bin/cat /home/user/level7/.pass");
+}
+
+int main(int argc, char **argv) {
+	char *buffer = malloc(64);
+	void (**f)();
+
+	f = malloc(sizeof(void *));
+	*f = &n;
+	strcpy(buffer, argv[1]);
+	(*f)();
+
+	return (0);
+}

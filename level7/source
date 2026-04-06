@@ -1,0 +1,23 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+struct s { char *buf; };
+
+void m(void) {
+	system("/bin/cat /home/user/level8/.pass");
+}
+
+int main(int argc, char **argv) {
+	struct s *a = malloc(sizeof(struct s));
+	a->buf = malloc(8);
+	struct s *b = malloc(sizeof(struct s));
+	b->buf = malloc(8);
+
+	strcpy(a->buf, argv[1]); // <-- OVERFLOW ICI (on écrase b->buf)
+	strcpy(b->buf, argv[2]); // <-- ÉCRITURE ARBITRAIRE ICI
+
+	puts("~~"); // <-- LE DÉTONATEUR
+	return (0);
+}

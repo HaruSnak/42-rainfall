@@ -1,0 +1,37 @@
+
+En utilisant ltrace ./level1, on observe que le programme appelle la fonction gets().
+Pourquoi gets est-elle dangereuse ?
+En programmation C, gets est considérée comme "dépréciée" et "hautement dangereuse". Contrairement à fgets, elle ne demande jamais la taille maximale du texte à lire.
+Le buffer : C'est une boîte en mémoire (souvent 64 octets).
+Le problème : Si tu tapes 100 caractères, gets continuera d'écrire les 36 caractères restants en dehors de la boîte, écrasant les données voisines sur la Pile (Stack).
+
+gdb:	Pour explorer les fonctions "cachées" et calculer la distance exacte avant le plantage.
+ltrace:	Pour confirmer quelle fonction de lecture est utilisée (gets).
+python:	Pour générer une chaîne de caractères précise et "non-imprimable" (adresses mémoires).
+cat:	Pour maintenir le flux d'entrée ouvert une fois le shell obtenu.
+
+En listant les fonctions dans GDB (info functions), on découvre une fonction nommée run.
+En la désassemblant (disas run), on s'aperçoit qu'elle exécute /bin/sh. C'est notre cible. Elle n'est jamais appelée par le programme normal, nous allons donc devoir "forcer" le processeur à sauter dedans.
+
+Nous avons besoin de l'adresse exacte de run pour dire au programme où aller.
+
+(gdb) p run
+# Exemple de réponse : 0x08048444
+
+
+On sait que le buffer fait environ 64 octets, mais il faut trouver le nombre exact de caractères à envoyer pour atteindre l'EIP (Instruction Pointer), qui est l'adresse de retour.
+On envoie une suite de caractères (ex: 76 "A").
+Si le programme fait un Segfault à l'adresse 0x41414141 (le code hex de "A"), c'est qu'on a touché l'EIP.
+Note : Pour le Level 1 de Rainfall, l'offset est généralement de 76.
+
+Les processeurs x86 lisent les adresses à l'envers. Si l'adresse de run est 0x08048444, nous devons l'envoyer sous la forme : \x44\x84\x04\x08.
+
+Nous combinons tout cela dans une commande "One-liner" :
+
+(python -c 'print "A" * 76 + "\x44\x84\x04\x08"'; cat) | ./level1
+
+Pourquoi le ( ... ; cat) ?
+Python envoie le "Payload" (76 A + l'adresse de run).
+Le programme level1 reçoit cela, déborde, et saute dans la fonction run.
+La fonction run lance un shell (/bin/sh).
+Problème : Si on n'ajoute pas ; cat, le pipe se ferme et le shell s'éteint aussitôt. Le cat force le terminal à rester ouvert pour que tu puisses taper tes commandes (whoami, cat .pass).

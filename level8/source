@@ -1,0 +1,50 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// Variables globales (situées aux adresses 0x8049aac et 0x8049ab0)
+char *auth = NULL;
+char *service = NULL;
+
+int main(void) {
+	char line[128]; // Allocation de 0xa0 (160 octets) sur la pile
+
+	while (1) {
+		// 0x08048575 : Affiche l'état des pointeurs
+		printf("%p, %p \n", auth, service);
+		// 0x080485ae : Lit l'entrée utilisateur
+		if (fgets(line, 128, stdin) == NULL) {
+			break;
+		}
+		// 0x080485cf : Commande "auth " (repz cmpsb sur 5 octets)
+		if (strncmp(line, "auth ", 5) == 0) {
+			auth = malloc(4);
+			auth[0] = 0; // movl $0x0,(%eax)
+			
+			// 0x0804861c : Calcule la longueur de l'argument (repnz scas)
+			if (strlen(line + 5) <= 30) {
+				strcpy(auth, line + 5);
+			}
+		}
+		// 0x08048656 : Commande "reset" (repz cmpsb sur 5 octets)
+		if (strncmp(line, "reset", 5) == 0) {
+			free(auth);
+		}
+		// 0x0804868c : Commande "service" (repz cmpsb sur 6 octets)
+		if (strncmp(line, "service", 6) == 0) {
+			service = strdup(line + 7);
+		}
+		// 0x080486c9 : Commande "login" (repz cmpsb sur 5 octets)
+		if (strncmp(line, "login", 5) == 0) {
+			// 0x080486e7 : LA FAILLE
+			// mov 0x20(%eax),%eax -> Vérifie auth + 32 octets (0x20)
+			if (auth && auth[32] != 0) {
+				system("/bin/sh");
+			} else {
+				// fwrite("Password:\n", 1, 10, stdout)
+				fwrite("Password:\n", 1, 10, stdout);
+			}
+		}
+	}
+	return (0);
+}

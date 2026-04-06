@@ -1,0 +1,29 @@
+En lançant le binaire sans arguments ou avec des arguments au hasard, le programme return "No !". Puisque nous n'avons pas le code source, nous devons utiliser le Reverse Engineering pour comprendre sa logique interne.
+
+Outil utilisé : gdb (GNU Debugger).Action : Analyser la fonction principale (main).Bashgdb ./level0
+(gdb) set disassembly-flavor intel : Pour passer en mode intel au lieu du AT&T qui detruit la simplicite
+(gdb) disas main : Cette commande demande à GDB de traduire le langage machine (binaire) en langage assembleur pour la fonction main
+
+
+Dans le dump de la fonction main, un bloc d'instructions spécifique attire notre attention :
+
+call <atoi> : Le programme transforme notre argument (du texte) en un nombre entier.
+cmp eax, 0x1a7 : C'est le verrou. Le programme compare le nombre qu'on a donné (dans eax) à la valeur fixe 0x1a7.
+jne <main+152> : Si les valeurs ne sont pas égales, le programme saute à la fin et nous rejette.
+
+Le "Secret"
+Le chiffre magique est stocké en hexadécimal : 0x1a7.
+https://sebastienguillon.com/test/javascript/convertisseur.html
+Ou n'importe quel site qui converti l'hexadécimal en décimal.
+Le mot de passe numérique est donc : 423.
+
+L'Exploitation
+Une fois le verrou identifié, on observe la suite du code dans GDB. Si la comparaison est réussie (input == 423), le programme appelle :
+setresgid / setresuid : Pour élever nos privilèges vers level1.
+execve("/bin/sh") : Pour nous donner un terminal de commande.
+
+./level0 423
+
+Après l'exécution, nous obtenons un nouveau shell. Un simple whoami confirme que nous sommes maintenant level1.
+Récupération du Flag
+Puis cat /home/user/level1/.pass 

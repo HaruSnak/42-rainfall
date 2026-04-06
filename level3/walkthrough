@@ -1,0 +1,49 @@
+Au début de ce niveau, j'ai suivi une approche classique d'exploitation qui consiste simplement à exécuter le binaire pour observer son comportement.
+Le schéma est exactement le même que pour le level2: tu rentres une chaîne de caractères, puis le programme te la renvoie via un `printf`.
+En effectuant les mêmes tests (saisie normale, puis injection de flags `printf`), le diagnostic tombe: Bingo ! Il y a bien une faille, mais cette fois-ci, elle concerne la gestion de la chaîne de formatage (Format String).
+
+ Analyse sous GDB
+
+L'étape suivante s'est déroulée sous GDB (`gdb ./level3`). L'analyse du code montre que la fonction `main` appelle une fonction `p()`.
+
+ La condition de victoire
+Dans le code assembleur de `p()`, on repère une instruction `cmp` (comparaison). Celle-ci nous donne le nombre d'octets précis que l'on doit atteindre pour valider la condition.
+
+ La cible
+En lançant un `info variables`, on cherche des variables globales suspectes. Bingo: une variable nommée `m` apparaît à l'adresse `0x0804988c`.
+
+Nous avons désormais:
+- L'adresse cible: `0x0804988c`
+- La valeur à atteindre: Le `cmp` indique qu'il faut que `m` soit égal à `64`.
+
+ Recherche de l'offset
+
+Il me manquait la position exacte (l'offset) de mon entrée sur la pile pour pouvoir modifier la variable `m`. Pour cela, j'utilise une balise reconnaissable (`AAAA`) suivie de plusieurs `%p`.
+
+Test effectué:
+
+./level3
+AAAA %p %p %p %p %p %p %p %p %p %p %p %p %p
+
+
+Analyse du résultat:
+On sait que `AAAA` en hexadécimal correspond à `0x41414141`. En observant la fuite de mémoire (leak), si je tombe sur `0x41414141`, c'est que j'ai trouvé la position de mon tampon sur la pile.
+
+Résultat:
+La valeur apparaît en 4ème position. L'offset est donc de `4`.
+
+ Exploitation
+
+Avec toutes ces informations, je peux forger ma commande Python pour réaliser une écriture arbitraire en mémoire.
+
+ La logique du Payload:
+- L'adresse (4 octets): `\x8c\x98\x04\x08` (L'adresse de `m` en Little-Endian).
+- Le Padding (60 octets): On ajoute 60 caractères "A" pour que `printf` affiche un total de 64 caractères (4 + 60 = 64).
+- L'écriture (`%4$n`): Le flag `%n` va écrire le nombre de caractères affichés (64) à l'adresse située à la 4ème position de la pile (notre variable `m`).
+
+Commande finale:
+
+(python -c 'print "\x8c\x98\x04\x08" + "A"*60 + "%4$n"'; cat) | ./level3
+
+
+L'utilisation du `cat` à la fin permet de maintenir le shell ouvert une fois que le programme a validé la condition et exécuté `system("/bin/sh")`.
